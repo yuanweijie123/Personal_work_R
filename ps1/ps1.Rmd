@@ -1,0 +1,201 @@
+---
+title: "Ps1_Ans"
+author: "Weijie Yuan"
+date: "9/1/2018"
+output:
+  pdf_document: default
+SID: '3034375855'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Answer for Problem 3
+# (a)
+Firstly, I create a new(temp) subdirectory within my working directory and creating my Rmd file in this new subdirectory.
+```{bash}
+pwd
+```
+Then, download the recent 10 years' data from https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/by_year/. I use loop to download the data from 2009 to 2018.
+
+```{bash}
+for year in {2010..2018}; 
+do 
+curl -O https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/by_year/$year.csv.gz;
+done
+```
+To report the number of observations for Death Valley in each year by printing the information to the screen, I search the station ID codes of Death Valley is USC00042319.
+```{bash}
+# unzip .gz files
+for year in {2010..2018}; do gunzip $year.csv.gz; done
+```
+```{bash}
+# report the number of observation each year
+for year in {2010..2018}; do echo "${year} $(wc -l $year.csv)"; done
+```
+
+# (b)
+Firstly, I download the ghcnd-stations.txt including information about station ID codes and check the data structure by looking over the first 5 rows.
+```{bash}
+curl -O https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt
+head -n 5 ghcnd-stations.txt
+```
+
+Then I extract the station ID code of Death Valley for the ghcn-stations.txt by match the "DEATH VALLEY" and cut the first part. Assign the station ID to a variable named id_of_deathvalley.
+```{bash}
+id_of_deathvalley=$(grep "DEATH VALLEY" ghcnd-stations.txt | cut -d' ' -f1)
+echo $id_of_deathvalley
+#After that, I use mkdir to bulid a new subdirectory and extract all lines matching 
+#station ID code, TMAX and March from original .csv files. And put these matched items 
+#into new corresponding .csv files. Finally I put all these generated .csv files 
+#together.
+mkdir subset
+for year in {2010..2018}; do 
+grep "$id_of_deathvalley" $year.csv |
+grep "TMAX" | 
+grep "${year}03" > subset/subset_$year.csv; done
+cd subset
+cat *.csv > sum_subset.csv
+```
+```{bash}
+# Move sum_subset.csv out to current working directory and check its data structure by 
+#looking over its first ten items.
+mv subset/sum_subset.csv .
+head -n 10 sum_subset.csv
+```
+
+
+#(c)
+
+Extract all the TMAX each day in March from the fourth column of sum_subset. Convert the data into a matrix of which shape is 9*31, which means 31 days in March and 9 years data respectively.
+
+```{r pressure, echo=TRUE}
+data <- read.csv("sum_subset.csv",header = FALSE)
+TMAX_index = rep(1:31,times=9)
+boxplot(data[,4] ~TMAX_index,main="Maximum Daily Temperature on Each Day in March",
+        xlab ="Days in March",ylab="TMAX")
+```
+
+#(d)
+I build a bash function to match user's interst. There are four input parameters and one output information. Fours inputs include years, month, station and weather. "Years" parameter has an array-like structure and the most advantage of using array is that you can select years that are not successive. For example, a user just want to compare the weather feature between 1900 and 2018. This structure can be used to save a lot time which is supposed to download the data from 1901-2017. The "month" parameter can be numeric or string with or without quote. The "weather" function can also be numeric or string. And spcial case is "Station" parameter, because users may input station name with spacing between words, which is unavoidable. So this parameter should be enter with quotes on both sides of station name.
+```{bash}
+function get_weather(){
+if [ "$1" == "-h" ]; then
+  echo "This function is design to output the maximum daily temperature of years and
+  month according to user's interest.
+  Input:
+  years: years of interest in format '({year1,year2,...})[@]'
+  month: numeric value, from 01 to 12
+  station: a string of the name of the weather station (UPPER CASE)
+  weather: the weather features of interest.
+    the input of weather can only be below:
+    PRCP = Precipitation(tenths of mm)
+    SNOW = Snowfall (mm)
+    SNWD = Snow depth (mm)
+    TMAX = Maximum temperature (tenths of degree in C)
+    TMIN = Minimum temperature (tenths of degree in C)
+    TAVG = Average temperature
+  Output:
+  information containing user's interest"
+  exit 0
+fi
+# check if the number of argument is legal. If illegal, return the error message and exit 
+# the fuction.
+if [ "$#" -ne 4 ]; then
+echo "Error: Invalid arguments please pass exactly four arguments"
+exit 1
+fi
+# check if the weather features is legal. If illegal, return the error message and exit
+# the function.
+if ! [ "$4" == "PRCP" ] && ! [ "$4" == "SNOW" ] &&
+! [ "$4" == "SNWD" ] && ! [ "$4" == "TMAX" ] &&
+! [ "$4" == "TMIN" ] && ! [ "$4" == "TAVG" ]; then 
+echo "Error: Wrong weather feature of interest"
+exit 1
+fi
+#creat new temporary directory
+mkdir temp;
+cd temp;
+arr=("${!1}");
+# loop by years provided in the first argument.
+# download and unzip
+for year in "${arr[@]}"
+do 
+curl -O https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/by_year/$year.csv.gz;
+gzip -d $year.csv.gz;
+done
+# download the .txt file including the information about station names and ID codes.
+curl -O https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt
+# match the input name with corresponding id code
+id=$(grep "$3" ghcnd-stations.txt | cut -d' ' -f1)
+# check if the the input name can identify a single weather station
+# if not, return error message and exit the function
+if ! [ -n $id ]
+then
+echo "Error: Can not identify a single weather station"
+cd ..
+rm -rf temp
+exit 1
+fi
+# put the matched information together and return the result
+mkdir subset;
+for year in "${arr[@]}"; 
+do
+grep "$id" $year.csv | 
+grep "$4" |
+grep "${year}$2" > subset/subset_$year.csv;
+done
+cd subset
+cat *.csv > sum_subset.csv
+cat sum_subset.csv
+# remove the raw downloaded data files
+cd ..
+cd ..
+rm -rf temp
+}
+
+#get_weather -h
+a=({2010,2011}) #users can add any years of interest
+get_weather a[@] 04 "DEATH VALLEY" TMIN
+```
+
+##Answer for Problem 4
+Use grep and sed function extract all the file name with .txt from the HTML index file. Download all of them and return status message including the name of file to the user.
+```{bash}
+for file in $(curl -s https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/ |
+                  grep href |
+                  sed 's/.*href="//' |
+                  sed 's/".*//' |
+                  grep '^[a-zA-Z].*'| grep '.txt'); do
+    echo -e "\n $file"
+    curl -O https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/$file
+done
+```
+
+##Answer for Problem 5
+#(b)
+Download the "reticulate" package and load it into R workplace.
+```{r}
+library(reticulate)
+use_python('/Users/dogspro/anaconda3/bin/python')
+```
+
+Read a dataset into R and check its data structure.
+```{r}
+data <- read.csv("/Users/dogspro/Desktop/Working/stat243-S01/forestfires.csv",header = TRUE)
+data[1:10,]
+```
+
+Slightly process the data from R in python using "pandas". One can read data named 'dataset' from R to python using "r.dataset" and read data from python to R using "py$dataset". Furthermore, one can change environment from R to python in R console using "repl_python()" and back to R using "exit".
+```{python}
+import pandas
+fires = r.data
+fires_filter = fires[fires['month']=='sep'][['temp','DMC']]
+```
+
+Using ggplot to output visual result to users.
+```{r}
+library(ggplot2)
+ggplot(py$fires,aes(DMC,temp)) +geom_point()
+```
